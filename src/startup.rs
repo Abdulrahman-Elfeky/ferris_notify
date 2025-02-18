@@ -7,8 +7,12 @@ use axum::{
 
 use sqlx::PgPool;
 use tokio::net::TcpListener;
+use tower_http::trace::TraceLayer;
 
-use crate::routes::{health_check, subscribe};
+use crate::{
+    routes::{health_check, subscribe},
+    telemetry::RequestIdSpan,
+};
 
 #[derive(Clone, Debug)]
 pub struct AppState {
@@ -18,10 +22,8 @@ pub async fn run(listener: TcpListener, pg_pool: PgPool) -> io::Result<()> {
     let router = Router::new()
         .route("/health_check", get(health_check))
         .route("/subscriptions", post(subscribe))
-        .with_state(AppState { pg_pool });
-
-    //let listener = TcpListener::bind(address).await?;
-
+        .with_state(AppState { pg_pool })
+        .layer(TraceLayer::new_for_http().make_span_with(RequestIdSpan));
     axum::serve(listener, router).await?;
 
     Ok(())

@@ -1,17 +1,16 @@
 mod common;
 
 use common::setup;
-use ferris_notify::configuration::get_configurations;
 use reqwest::Client;
-use sqlx::{query, Connection, PgConnection};
+use sqlx::query;
 
 #[tokio::test]
 async fn health_check_works() {
-    let address = setup().await;
+    let app = setup().await;
 
     let client = Client::new();
     let res = client
-        .get(format!("{}/health_check", address))
+        .get(format!("{}/health_check", app.address))
         .send()
         .await
         .expect("Failed to execute request.");
@@ -22,17 +21,11 @@ async fn health_check_works() {
 
 #[tokio::test]
 async fn subscribe_return_200_for_a_valid_data() {
-    let address = setup().await;
-    let configuration = get_configurations().expect("Faild to read configuration.");
-    let connection_string = configuration.database.get_connection_string();
-    let mut connection = PgConnection::connect(&connection_string)
-        .await
-        .expect("Failed to connect to postgres.");
-
+    let app = setup().await;
     let client = Client::new();
     let valid_data = "name=abdulrahman_elfeky&email=abdulrahmanelfeky7%40gmail.com";
     let res = client
-        .post(format!("{}/subscriptions", address))
+        .post(format!("{}/subscriptions", app.address))
         .body(valid_data)
         .header("Content-Type", "application/x-www-form-urlencoded")
         .send()
@@ -40,7 +33,7 @@ async fn subscribe_return_200_for_a_valid_data() {
         .expect("Failed to execute request.");
 
     let saved = query!("SELECT email, name FROM subscriptions")
-        .fetch_one(&mut connection)
+        .fetch_one(&app.pool)
         .await
         .expect("Failed to fetch saved subscription.");
 
@@ -51,7 +44,7 @@ async fn subscribe_return_200_for_a_valid_data() {
 #[tokio::test]
 async fn subscribe_return_400_for_a_valid_data() {
     let client = Client::new();
-    let address = setup().await;
+    let app = setup().await;
     let invalid_data = [
         ("name=abdulrahman%20Elfeky", "email is missing"),
         ("email=abdulrahmanelfeky7%40gmail.com", "name is missing"),
@@ -59,7 +52,7 @@ async fn subscribe_return_400_for_a_valid_data() {
     ];
     for (data, error_message) in invalid_data {
         let res = client
-            .post(format!("{}/subscriptions", address))
+            .post(format!("{}/subscriptions", app.address))
             .body(data)
             .header("Content-Type", "application/x-www-form-urlencoded")
             .send()
