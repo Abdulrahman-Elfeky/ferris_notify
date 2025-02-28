@@ -42,7 +42,7 @@ async fn subscribe_return_200_for_a_valid_data() {
 }
 
 #[tokio::test]
-async fn subscribe_return_400_for_a_valid_data() {
+async fn subscribe_return_422_for_an_invalid_data() {
     let client = Client::new();
     let app = setup().await;
     let invalid_data = [
@@ -62,8 +62,36 @@ async fn subscribe_return_400_for_a_valid_data() {
         assert_eq!(
             422,
             res.status().as_u16(),
-            "The API didn't fail with 400 Bad Request when the payload was {}.",
+            "The API didn't fail with 422 Unprocessable Entity when the payload was {}.",
             error_message
+        );
+    }
+}
+
+#[tokio::test]
+async fn subscribe_return_400_empty_data() {
+    let client = Client::new();
+    let app = setup().await;
+    let test_cases = [
+        ("name=&email=abdulrahman%40gmail.com", "name is empty"),
+        ("name=abdulrahman&email=", "email is empty"),
+        ("name=&email=", "name and email are empty"),
+    ];
+
+    for (input, description) in test_cases {
+        let res = client
+            .post(format!("{}/subscriptions", app.address))
+            .body(input)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .send()
+            .await
+            .expect("Failed to execute request.");
+
+        assert_eq!(
+            400,
+            res.status().as_u16(),
+            "The API didn't fail with 400 Bad Request when the payload was {}.",
+            description
         );
     }
 }

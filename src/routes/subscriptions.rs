@@ -10,7 +10,10 @@ pub struct FormData {
     name: String,
     email: String,
 }
-use crate::startup::AppState;
+use crate::{
+    domain::{NewSubscriber, SubscriberName},
+    startup::AppState,
+};
 
 #[tracing::instrument(name = "Adding a new subscriber.", level = "debug",
     skip(state, form),
@@ -20,7 +23,20 @@ pub async fn subscribe(
     Form(form): Form<FormData>,
 ) -> impl IntoResponse {
     let pool = state.pg_pool;
-    match insert_subscriber(&pool, &form).await {
+
+    let name = match SubscriberName::parse(form.name) {
+        Ok(name) => name,
+        Err(_) => {
+            return StatusCode::BAD_REQUEST;
+        }
+    };
+
+    let new_subscriber = NewSubscriber {
+        email: form.email,
+        name,
+    };
+
+    match insert_subscriber(&pool, &new_subscriber).await {
         Ok(_) => {
             info!("New subscriber details have been saved.",);
             StatusCode::OK
@@ -32,15 +48,18 @@ pub async fn subscribe(
 #[tracing::instrument(
     name = "Saving a new subscriber details in the database.",
     level = "debug",
-    skip(pool, form)
+    skip(pool, new_subscriber)
 )]
-async fn insert_subscriber(pool: &Pool<Postgres>, form: &FormData) -> sqlx::Result<(), Error> {
+async fn insert_subscriber(
+    pool: &Pool<Postgres>,
+    new_subscriber: &NewSubscriber,
+) -> sqlx::Result<(), Error> {
     query!(
         r#"INSERT INTO subscriptions (id, email, name, subscribed_at)
         VALUES ($1,$2,$3,$4) "#,
         Uuid::new_v4(),
-        form.email,
-        form.name,
+        new_subscriber.email,
+        new_subscriber.name.as_ref(),
         Utc::now()
     )
     .execute(pool)

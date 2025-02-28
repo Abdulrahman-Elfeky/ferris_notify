@@ -1,0 +1,8 @@
+target/
+scripts/
+migrations/
+tests/
+.git
+.env
+Dockerfile
+

@@ -18,12 +18,13 @@ async fn main() -> io::Result<()> {
     //    .with_env_filter(EnvFilter::from_default_env())
     //    .init();
     let config = get_configurations().expect("Failed to read configuration.");
-    let address = format!("127.0.0.1:{}", config.application_port);
+    //let address = format!("127.0.0.1:{}", config.application_port);
+    let address = format!("{}:{}", config.application.host, config.application.port);
     let listener = TcpListener::bind(address)
         .await
         .expect("Failed to bind to address.");
-    let connection = PgPool::connect(&config.database.get_connection_string().expose_secret())
-        .await
+    let connection = PgPool::connect_lazy(&config.database.get_connection_string().expose_secret())
+        //.await
         .expect("Failed to connect to postgres.");
     run(listener, connection).await?;
     Ok(())
