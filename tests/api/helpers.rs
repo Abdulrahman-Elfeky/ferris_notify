@@ -1,15 +1,12 @@
-//use std::time::Duration;
-
-use std::{env, io, sync::LazyLock};
+use std::{env, io, net::SocketAddr, sync::LazyLock};
 
 use ferris_notify::{
     configuration::{get_configurations, DatabaseSettings},
-    startup::run,
+    startup::build,
     telemetry::{get_subscriber, init_subscriber},
 };
 use secrecy::ExposeSecret;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
-use tokio::net::TcpListener;
 use uuid::Uuid;
 
 static TRACING: LazyLock<()> = LazyLock::new(|| {
@@ -22,24 +19,25 @@ static TRACING: LazyLock<()> = LazyLock::new(|| {
     }
 });
 pub struct TestApp {
-    pub address: String,
+    pub address: SocketAddr,
     pub pool: PgPool,
 }
 
 pub async fn setup() -> TestApp {
     LazyLock::force(&TRACING);
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("Failed to bind to the address");
-    let port = listener.local_addr().unwrap().port();
+
     let mut config = get_configurations().expect("Failed to read configuration.");
     config.database.database_name = Uuid::new_v4().to_string();
-    //dbg!(&config.database);
+    config.application.port = 0;
     let pool = configure_database(&config.database).await;
-    let fut = run(listener, pool.clone());
-    tokio::spawn(fut);
-    //tokio::time::sleep(Duration::from_secs(1)).await;
-    let address = format!("http://127.0.0.1:{}", port);
+    let serve = build(config).await;
+    let address = serve.local_addr().unwrap();
+
+    let fut = async || {
+        serve.await.expect("Axum server stopped!!!");
+    };
+    tokio::spawn(fut());
+
     TestApp { address, pool }
 }
 

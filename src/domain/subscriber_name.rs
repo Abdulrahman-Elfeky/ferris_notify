@@ -1,10 +1,5 @@
 use unicode_segmentation::UnicodeSegmentation;
 
-pub struct NewSubscriber {
-    pub email: String,
-    pub name: SubscriberName,
-}
-
 #[derive(Debug)]
 pub struct SubscriberName(String);
 
@@ -35,7 +30,7 @@ impl SubscriberName {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use claims::*;
+    use claims::{assert_err, assert_ok};
 
     #[test]
     fn a_256_long_grapheme_is_valid() {

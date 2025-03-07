@@ -1,7 +1,7 @@
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Form};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use sqlx::{query, Error, Pool, Postgres};
+use sqlx::{query, Error, PgPool, Pool, Postgres};
 use tracing::{error, info};
 use uuid::Uuid;
 
@@ -10,30 +10,20 @@ pub struct FormData {
     name: String,
     email: String,
 }
-use crate::{
-    domain::{NewSubscriber, SubscriberName},
-    startup::AppState,
-};
+use crate::domain::{NewSubscriber, SubscriberEmail, SubscriberName};
 
 #[tracing::instrument(name = "Adding a new subscriber.", level = "debug",
-    skip(state, form),
+    skip(pool, form),
     fields(subscriber_email=%form.email,subscriber_name=%form.name))]
 pub async fn subscribe(
-    State(state): State<AppState>,
+    State(pool): State<PgPool>,
     Form(form): Form<FormData>,
 ) -> impl IntoResponse {
-    let pool = state.pg_pool;
-
-    let name = match SubscriberName::parse(form.name) {
-        Ok(name) => name,
+    let new_subscriber = match form.try_into() {
+        Ok(new_subscriber) => new_subscriber,
         Err(_) => {
             return StatusCode::BAD_REQUEST;
         }
-    };
-
-    let new_subscriber = NewSubscriber {
-        email: form.email,
-        name,
     };
 
     match insert_subscriber(&pool, &new_subscriber).await {
@@ -58,7 +48,7 @@ async fn insert_subscriber(
         r#"INSERT INTO subscriptions (id, email, name, subscribed_at)
         VALUES ($1,$2,$3,$4) "#,
         Uuid::new_v4(),
-        new_subscriber.email,
+        new_subscriber.email.as_ref(),
         new_subscriber.name.as_ref(),
         Utc::now()
     )
@@ -70,4 +60,14 @@ async fn insert_subscriber(
     })?;
 
     Ok(())
+}
+
+impl TryFrom<FormData> for NewSubscriber {
+    type Error = String;
+
+    fn try_from(form: FormData) -> Result<Self, Self::Error> {
+        let name = SubscriberName::parse(form.name)?;
+        let email = SubscriberEmail::parse(form.email)?;
+        Ok(Self { name, email })
+    }
 }

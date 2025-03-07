@@ -1,23 +1,7 @@
-mod common;
-
-use common::setup;
 use reqwest::Client;
 use sqlx::query;
 
-#[tokio::test]
-async fn health_check_works() {
-    let app = setup().await;
-
-    let client = Client::new();
-    let res = client
-        .get(format!("{}/health_check", app.address))
-        .send()
-        .await
-        .expect("Failed to execute request.");
-
-    assert!(res.status().is_success());
-    assert_eq!(Some(0), res.content_length());
-}
+use crate::helpers::setup;
 
 #[tokio::test]
 async fn subscribe_return_200_for_a_valid_data() {
@@ -25,7 +9,7 @@ async fn subscribe_return_200_for_a_valid_data() {
     let client = Client::new();
     let valid_data = "name=abdulrahman_elfeky&email=abdulrahmanelfeky7%40gmail.com";
     let res = client
-        .post(format!("{}/subscriptions", app.address))
+        .post(format!("http://{}/subscriptions", app.address))
         .body(valid_data)
         .header("Content-Type", "application/x-www-form-urlencoded")
         .send()
@@ -52,7 +36,7 @@ async fn subscribe_return_422_for_an_invalid_data() {
     ];
     for (data, error_message) in invalid_data {
         let res = client
-            .post(format!("{}/subscriptions", app.address))
+            .post(format!("http://{}/subscriptions", app.address))
             .body(data)
             .header("Content-Type", "application/x-www-form-urlencoded")
             .send()
@@ -75,12 +59,12 @@ async fn subscribe_return_400_empty_data() {
     let test_cases = [
         ("name=&email=abdulrahman%40gmail.com", "name is empty"),
         ("name=abdulrahman&email=", "email is empty"),
-        ("name=&email=", "name and email are empty"),
+        ("name=&email=", "both name and email are empty"),
     ];
 
     for (input, description) in test_cases {
         let res = client
-            .post(format!("{}/subscriptions", app.address))
+            .post(format!("http://{}/subscriptions", app.address))
             .body(input)
             .header("Content-Type", "application/x-www-form-urlencoded")
             .send()
@@ -90,7 +74,7 @@ async fn subscribe_return_400_empty_data() {
         assert_eq!(
             400,
             res.status().as_u16(),
-            "The API didn't fail with 400 Bad Request when the payload was {}.",
+            "The API didn't fail with 400 Bad Request when the payload was '{}'.",
             description
         );
     }

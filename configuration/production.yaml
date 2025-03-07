@@ -3,3 +3,7 @@ application :
 database : 
   host: db
   port: 5432
+email_client:
+  base_url : "https://api.brevo.com/v3/smtp"
+  sender_email : "pody6163@gmail.com"
+  sender_name : "Tabeebly"

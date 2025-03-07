@@ -1,27 +1,43 @@
-use std::env;
+use std::{env, time::Duration};
 
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct Settings {
     pub database: DatabaseSettings,
     pub application: ApplicationSettings,
+    pub email_client: EmailClientSetting,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct ApplicationSettings {
     pub port: u16,
     pub host: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct DatabaseSettings {
     pub username: String,
     pub password: SecretString,
     pub port: u16,
     pub host: String,
     pub database_name: String,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct EmailClientSetting {
+    pub base_url: String,
+    pub sender_email: String,
+    pub sender_name: String,
+    pub authorization_token: SecretString,
+    pub timeout_milliseconds: u64,
+}
+
+impl EmailClientSetting {
+    pub fn timeout(&self) -> Duration {
+        Duration::from_millis(self.timeout_milliseconds)
+    }
 }
 
 pub fn get_configurations() -> Result<Settings, config::ConfigError> {

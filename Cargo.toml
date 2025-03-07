@@ -17,12 +17,14 @@ tracing-bunyan-formatter = "0.3.10"
 tracing-subscriber = { version = "0.3.19", features = ["registry","env-filter"] }
 unicode-segmentation = "1.12.0"
 uuid = { version = "1.13.1", features = ["v4"] }
+validator = "0.20.0"
 
 [dependencies.sqlx]
 version = "0.8"
 default-features = false
 features = [
-"runtime-tokio-rustls",
+"runtime-tokio",
+"tls-rustls",
 "macros",
 "postgres",
 "uuid",
@@ -30,7 +32,16 @@ features = [
 "migrate"
 ]
 
+[dependencies.reqwest]
+version = "0.12.12"
+default-features = false
+features = ["json", "rustls-tls"]
+
 [dev-dependencies]
 claims = "0.8.0"
-reqwest = "0.12.12"
+fake = "4.0.0"
+quickcheck = "1.0.3"
+quickcheck_macros = "1.0.0"
+wiremock = "0.6.3"
+# reqwest = "0.12.12"
 

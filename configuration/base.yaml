@@ -1,8 +1,14 @@
 application :
   port : 8000
 database: 
-  # port : 8080
-  # host : "127.0.0.1"
+  port : 8080
+  host : "127.0.0.1"
   username : "postgres"
   password : "p@ssw0rd"
   database_name : "newsletter"
+email_client:
+  base_url : "localhost"
+  sender_email : "test@gmail.com"
+  sender_name : "Abdulrahman"
+  authorization_token : "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"
+  timeout_milliseconds : 1000
