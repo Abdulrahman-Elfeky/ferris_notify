@@ -5,6 +5,7 @@ use ferris_notify::{
     startup::build,
     telemetry::{get_subscriber, init_subscriber},
 };
+use reqwest::Client;
 use secrecy::ExposeSecret;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use uuid::Uuid;
@@ -34,7 +35,7 @@ pub async fn setup() -> TestApp {
     let address = serve.local_addr().unwrap();
 
     let fut = async || {
-        serve.await.expect("Axum server stopped!!!");
+        serve.await.expect("Axum server stopped with error!!!");
     };
     tokio::spawn(fut());
 
@@ -60,4 +61,17 @@ pub async fn configure_database(config: &DatabaseSettings) -> PgPool {
         .await
         .expect("Failed to migrate the database.");
     pool
+}
+
+impl TestApp {
+    pub async fn post_subscriptions(&self, body: &'static str) -> reqwest::Response {
+        let client = Client::new();
+        client
+            .post(format!("http://{}/subscriptions", self.address))
+            .body(body)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
 }

@@ -5,7 +5,6 @@ use ferris_notify::{
     startup::build,
     telemetry::{get_subscriber, init_subscriber},
 };
-//use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
