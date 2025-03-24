@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::{
     extract::FromRef,
     routing::{get, post},
@@ -13,7 +15,7 @@ use tower_http::trace::TraceLayer;
 use crate::{
     configuration::Settings,
     email_client::EmailClient,
-    routes::{health_check, subscribe},
+    routes::{confirm, health_check, subscribe},
     telemetry::RequestIdSpan,
 };
 
@@ -21,19 +23,25 @@ use crate::{
 pub struct AppState {
     pub pg_pool: PgPool,
     pub email_client: EmailClient,
+    pub base_url: Arc<BaseUrl>,
 }
 
+pub struct BaseUrl(pub String);
 pub fn run(
     listener: TcpListener,
     pg_pool: PgPool,
     email_client: EmailClient,
+    base_url: String,
 ) -> Serve<TcpListener, Router, Router> {
+    let base_url = Arc::new(BaseUrl(base_url));
     let router = Router::new()
         .route("/health_check", get(health_check))
         .route("/subscriptions", post(subscribe))
+        .route("/subscriptions/confirm", get(confirm))
         .with_state(AppState {
             pg_pool,
             email_client,
+            base_url,
         })
         .layer(TraceLayer::new_for_http().make_span_with(RequestIdSpan));
     axum::serve(listener, router)
@@ -49,10 +57,16 @@ pub async fn build(config: Settings) -> Serve<TcpListener, Router, Router> {
         //.await
         .expect("Failed to connect to postgres.");
 
+    dbg!(&config.email_client.base_url);
     let email_client =
         EmailClient::try_from(config.email_client).expect("Invalid email client settings.");
 
-    run(listener, connection, email_client)
+    run(
+        listener,
+        connection,
+        email_client,
+        config.application.base_url,
+    )
 }
 
 impl FromRef<AppState> for PgPool {
@@ -63,5 +77,11 @@ impl FromRef<AppState> for PgPool {
 impl FromRef<AppState> for EmailClient {
     fn from_ref(input: &AppState) -> Self {
         input.email_client.clone()
+    }
+}
+
+impl FromRef<AppState> for Arc<BaseUrl> {
+    fn from_ref(input: &AppState) -> Self {
+        input.base_url.clone()
     }
 }

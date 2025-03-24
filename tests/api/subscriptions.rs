@@ -1,27 +1,57 @@
 use sqlx::query;
+use wiremock::{
+    matchers::{method, path},
+    Mock, ResponseTemplate,
+};
 
-use crate::helpers::setup;
+use crate::helpers::spawn_app;
 
 #[tokio::test]
 async fn subscribe_return_200_for_a_valid_data() {
-    let app = setup().await;
+    let app = spawn_app().await;
 
     let valid_data = "name=abdulrahman_elfeky&email=abdulrahmanelfeky7%40gmail.com";
 
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&app.email_server)
+        .await;
+
     let res = app.post_subscriptions(valid_data).await;
 
-    let saved = query!("SELECT email, name FROM subscriptions")
+    assert_eq!(200, res.status().as_u16());
+}
+
+#[tokio::test]
+async fn subscribe_persists_the_new_subscriber() {
+    let app = spawn_app().await;
+
+    let valid_data = "name=abdulrahman_elfeky&email=abdulrahmanelfeky7%40gmail.com";
+
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&app.email_server)
+        .await;
+
+    let _ = app.post_subscriptions(valid_data).await;
+
+    let saved = query!("SELECT email, name, status FROM subscriptions")
         .fetch_one(&app.pool)
         .await
         .expect("Failed to fetch saved subscription.");
 
-    assert_eq!(200, res.status().as_u16());
-    assert_eq!(saved.name, "abdulrahman_elfeky")
+    assert_eq!(saved.name, "abdulrahman_elfeky");
+    assert_eq!(saved.email, "abdulrahmanelfeky7@gmail.com");
+    assert_eq!(saved.status, "pending_confirmation");
 }
 
 #[tokio::test]
 async fn subscribe_return_422_for_an_missing_data() {
-    let app = setup().await;
+    let app = spawn_app().await;
 
     let invalid_data = [
         ("name=abdulrahman%20Elfeky", "email is missing"),
@@ -43,7 +73,7 @@ async fn subscribe_return_422_for_an_missing_data() {
 
 #[tokio::test]
 async fn subscribe_return_400_invalid_data() {
-    let app = setup().await;
+    let app = spawn_app().await;
 
     let test_cases = [
         ("name=&email=abdulrahman%40gmail.com", "name is empty"),
@@ -62,4 +92,39 @@ async fn subscribe_return_400_invalid_data() {
             description
         );
     }
+}
+
+#[tokio::test]
+async fn subscribe_sends_a_confirmation_email_for_vaild_data() {
+    let app = spawn_app().await;
+    let body = "name=abdulrahman&email=abdulrahmanelfeky7%40gmail.com";
+
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&app.email_server)
+        .await;
+
+    let res = app.post_subscriptions(body).await;
+
+    assert_eq!(res.status().as_u16(), 200);
+}
+
+#[tokio::test]
+async fn subscribe_sends_a_confirmation_email_with_a_link() {
+    let app = spawn_app().await;
+    let body = "name=abdulrahman&email=abdulrahmanelfeky7%40gmail.com";
+
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&app.email_server)
+        .await;
+
+    app.post_subscriptions(body).await;
+
+    let link = app.get_confirmation_links().await;
+    assert!(link.as_str().starts_with("http://127.0.0.1"));
 }

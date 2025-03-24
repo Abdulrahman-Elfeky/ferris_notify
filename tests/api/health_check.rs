@@ -1,15 +1,10 @@
-use reqwest::Client;
-
-use crate::helpers::setup;
+use crate::helpers::spawn_app;
 
 #[tokio::test]
 async fn health_check_works() {
-    let app = setup().await;
+    let app = spawn_app().await;
 
-    let client = Client::new();
-    let res = client
-        .get(format!("http://{}/health_check", app.address))
-        .send()
+    let res = reqwest::get(format!("http://{}/health_check", app.address))
         .await
         .expect("Failed to execute request.");
 

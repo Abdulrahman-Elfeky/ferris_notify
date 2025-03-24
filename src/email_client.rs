@@ -102,11 +102,12 @@ struct Recipient {
 }
 
 #[derive(Serialize, Deserialize)]
-struct SendEmailRequest {
+pub struct SendEmailRequest {
     sender: Sender,
     to: Vec<Recipient>,
     subject: String,
-    html_content: String,
+    #[serde(rename = "htmlContent")]
+    pub html_content: String,
 }
 
 #[cfg(test)]

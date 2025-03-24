@@ -2,6 +2,7 @@ use std::{env, io, net::SocketAddr, sync::LazyLock};
 
 use ferris_notify::{
     configuration::{get_configurations, DatabaseSettings},
+    email_client::SendEmailRequest,
     startup::build,
     telemetry::{get_subscriber, init_subscriber},
 };
@@ -9,6 +10,7 @@ use reqwest::Client;
 use secrecy::ExposeSecret;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use uuid::Uuid;
+use wiremock::MockServer;
 
 static TRACING: LazyLock<()> = LazyLock::new(|| {
     if env::var("TEST_LOG").is_ok() {
@@ -22,14 +24,21 @@ static TRACING: LazyLock<()> = LazyLock::new(|| {
 pub struct TestApp {
     pub address: SocketAddr,
     pub pool: PgPool,
+    pub email_server: MockServer,
 }
 
-pub async fn setup() -> TestApp {
+pub async fn spawn_app() -> TestApp {
     LazyLock::force(&TRACING);
 
-    let mut config = get_configurations().expect("Failed to read configuration.");
-    config.database.database_name = Uuid::new_v4().to_string();
-    config.application.port = 0;
+    let email_server = MockServer::start().await;
+
+    let config = {
+        let mut c = get_configurations().expect("Failed to read configuration.");
+        c.database.database_name = Uuid::new_v4().to_string();
+        c.application.port = 0;
+        c.email_client.base_url = email_server.uri();
+        c
+    };
     let pool = configure_database(&config.database).await;
     let serve = build(config).await;
     let address = serve.local_addr().unwrap();
@@ -39,7 +48,11 @@ pub async fn setup() -> TestApp {
     };
     tokio::spawn(fut());
 
-    TestApp { address, pool }
+    TestApp {
+        address,
+        pool,
+        email_server,
+    }
 }
 
 pub async fn configure_database(config: &DatabaseSettings) -> PgPool {
@@ -73,5 +86,23 @@ impl TestApp {
             .send()
             .await
             .expect("Failed to execute request.")
+    }
+
+    pub async fn get_confirmation_links(&self) -> reqwest::Url {
+        let email_body = self.email_server.received_requests().await.unwrap()[0]
+            .body_json::<SendEmailRequest>()
+            .unwrap()
+            .html_content;
+
+        let links = linkify::LinkFinder::new()
+            .links(&email_body)
+            .filter(|l| *l.kind() == linkify::LinkKind::Url)
+            .collect::<Vec<_>>();
+
+        assert_eq!(links.len(), 1);
+        let mut link = reqwest::Url::parse(links[0].as_str()).unwrap();
+
+        link.set_port(Some(self.address.port())).unwrap();
+        link
     }
 }
