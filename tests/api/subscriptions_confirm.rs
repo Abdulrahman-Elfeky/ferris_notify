@@ -33,7 +33,7 @@ async fn the_link_returned_by_subscribe_returns_200_if_called() {
 
     let _ = app.post_subscriptions(body).await;
 
-    let link = app.get_confirmation_links().await;
+    let link = app.get_confirmation_link().await;
 
     let res = reqwest::get(link).await.expect("Failed to send request.");
 
@@ -54,7 +54,7 @@ async fn clicking_on_the_confirmation_link_confirms_the_subscriber() {
 
     let _ = app.post_subscriptions(body).await;
 
-    let link = app.get_confirmation_links().await;
+    let link = app.get_confirmation_link().await;
 
     reqwest::get(link)
         .await

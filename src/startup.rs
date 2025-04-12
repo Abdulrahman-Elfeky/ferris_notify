@@ -10,16 +10,16 @@ use axum::{
 use secrecy::ExposeSecret;
 use sqlx::PgPool;
 use tokio::net::TcpListener;
-use tower_http::trace::TraceLayer;
+use tower_http::trace::{DefaultOnFailure, TraceLayer};
 
 use crate::{
     configuration::Settings,
     email_client::EmailClient,
-    routes::{confirm, health_check, subscribe},
+    routes::{confirm, health_check, publish_newsletter, subscribe},
     telemetry::RequestIdSpan,
 };
 
-#[derive(Clone)]
+#[derive(Clone, FromRef)]
 pub struct AppState {
     pub pg_pool: PgPool,
     pub email_client: EmailClient,
@@ -38,12 +38,17 @@ pub fn run(
         .route("/health_check", get(health_check))
         .route("/subscriptions", post(subscribe))
         .route("/subscriptions/confirm", get(confirm))
+        .route("/newsletter", post(publish_newsletter))
         .with_state(AppState {
             pg_pool,
             email_client,
             base_url,
         })
-        .layer(TraceLayer::new_for_http().make_span_with(RequestIdSpan));
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(RequestIdSpan)
+                .on_failure(DefaultOnFailure::new()),
+        );
     axum::serve(listener, router)
 }
 
@@ -67,21 +72,4 @@ pub async fn build(config: Settings) -> Serve<TcpListener, Router, Router> {
         email_client,
         config.application.base_url,
     )
-}
-
-impl FromRef<AppState> for PgPool {
-    fn from_ref(input: &AppState) -> Self {
-        input.pg_pool.clone()
-    }
-}
-impl FromRef<AppState> for EmailClient {
-    fn from_ref(input: &AppState) -> Self {
-        input.email_client.clone()
-    }
-}
-
-impl FromRef<AppState> for Arc<BaseUrl> {
-    fn from_ref(input: &AppState) -> Self {
-        input.base_url.clone()
-    }
 }

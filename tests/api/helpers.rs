@@ -88,7 +88,7 @@ impl TestApp {
             .expect("Failed to execute request.")
     }
 
-    pub async fn get_confirmation_links(&self) -> reqwest::Url {
+    pub async fn get_confirmation_link(&self) -> reqwest::Url {
         let email_body = self.email_server.received_requests().await.unwrap()[0]
             .body_json::<SendEmailRequest>()
             .unwrap()
@@ -104,5 +104,16 @@ impl TestApp {
 
         link.set_port(Some(self.address.port())).unwrap();
         link
+    }
+
+    pub async fn publish_newsletter(&self, body: &'static str) -> reqwest::Response {
+        let client = Client::new();
+        client
+            .post(format!("http://{}/newsletter", self.address))
+            .body(body)
+            .header("Content-Type", "application/json")
+            .send()
+            .await
+            .expect("Failed to execute request.")
     }
 }
