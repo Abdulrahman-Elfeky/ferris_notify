@@ -6,7 +6,9 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.97"
+argon2 = { version = "0.5.3", features = ["std"] }
 axum = { version = "0.8.1", features = ["macros"] }
+axum-extra = { version = "0.10.1", features = ["typed-header"] }
 chrono = { version = "0.4.39", default-features = false, features = ["clock"] }
 config = "0.15.7"
 rand = { version = "0.9.0", features = ["std_rng"] }
@@ -47,5 +49,6 @@ linkify = "0.10.0"
 quickcheck = "1.0.3"
 quickcheck_macros = "1.0.0"
 wiremock = "0.6.3"
+rand2 = { package = "rand", version = "0.8", features = ["std_rng"] }
 # reqwest = "0.12.12"
 

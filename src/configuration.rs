@@ -43,7 +43,7 @@ impl EmailClientSetting {
 
 pub fn get_configurations() -> Result<Settings, config::ConfigError> {
     let base_directory = env::current_dir().expect("Failed to determine the current directory.");
-    let configuratoin_directory = base_directory.join("configuration");
+    let configuration_directory = base_directory.join("configuration");
 
     let environment: Environment = env::var("APP_ENVIRONMENT")
         .unwrap_or_else(|_| "local".into())
@@ -54,10 +54,10 @@ pub fn get_configurations() -> Result<Settings, config::ConfigError> {
 
     let settings = config::Config::builder()
         .add_source(config::File::from(
-            configuratoin_directory.join("base.yaml"),
+            configuration_directory.join("base.yaml"),
         ))
         .add_source(config::File::from(
-            configuratoin_directory.join(environment_filename),
+            configuration_directory.join(environment_filename),
         ))
         .build()?;
 

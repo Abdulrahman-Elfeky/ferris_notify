@@ -11,5 +11,5 @@ email_client:
   base_url : "https://api.brevo.com/v3/smtp"
   sender_email : "pody6163@gmail.com"
   sender_name : "Abdulrahman Sender"
-  authorization_token : "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"
+  authorization_token : "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"
   timeout_milliseconds : 1000

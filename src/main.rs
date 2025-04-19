@@ -10,9 +10,6 @@ use ferris_notify::{
 async fn main() -> io::Result<()> {
     let subscriber = get_subscriber("notify-server".into(), "debug".into(), io::stdout);
     init_subscriber(subscriber);
-    //tracing_subscriber::fmt()
-    //    .with_env_filter(EnvFilter::from_default_env())
-    //    .init();
 
     let config = get_configurations().expect("Failed to read configuration.");
 

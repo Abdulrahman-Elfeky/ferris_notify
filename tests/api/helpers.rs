@@ -1,11 +1,13 @@
 use std::{env, io, net::SocketAddr, sync::LazyLock};
 
+use argon2::{password_hash::SaltString, Algorithm, Argon2, Params, Version};
 use ferris_notify::{
     configuration::{get_configurations, DatabaseSettings},
     email_client::SendEmailRequest,
     startup::build,
     telemetry::{get_subscriber, init_subscriber},
 };
+use rand2::thread_rng;
 use reqwest::Client;
 use secrecy::ExposeSecret;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
@@ -14,10 +16,10 @@ use wiremock::MockServer;
 
 static TRACING: LazyLock<()> = LazyLock::new(|| {
     if env::var("TEST_LOG").is_ok() {
-        let subscriber = get_subscriber("test".into(), "info".into(), io::stdout);
+        let subscriber = get_subscriber("test".into(), "debug".into(), io::stdout);
         init_subscriber(subscriber);
     } else {
-        let subscriber = get_subscriber("test".into(), "info".into(), io::sink);
+        let subscriber = get_subscriber("test".into(), "debug".into(), io::sink);
         init_subscriber(subscriber);
     }
 });
@@ -25,6 +27,7 @@ pub struct TestApp {
     pub address: SocketAddr,
     pub pool: PgPool,
     pub email_server: MockServer,
+    pub test_user: TestUser,
 }
 
 pub async fn spawn_app() -> TestApp {
@@ -48,11 +51,16 @@ pub async fn spawn_app() -> TestApp {
     };
     tokio::spawn(fut());
 
-    TestApp {
+    let test_app = TestApp {
         address,
         pool,
         email_server,
-    }
+        test_user: TestUser::generate(),
+    };
+
+    test_app.test_user.store(&test_app.pool).await;
+
+    test_app
 }
 
 pub async fn configure_database(config: &DatabaseSettings) -> PgPool {
@@ -110,10 +118,49 @@ impl TestApp {
         let client = Client::new();
         client
             .post(format!("http://{}/newsletter", self.address))
+            .basic_auth(&self.test_user.username, Some(&self.test_user.password))
             .body(body)
             .header("Content-Type", "application/json")
             .send()
             .await
             .expect("Failed to execute request.")
+    }
+}
+
+pub struct TestUser {
+    pub user_id: Uuid,
+    pub username: String,
+    pub password: String,
+}
+
+use argon2::password_hash::PasswordHasher;
+impl TestUser {
+    pub fn generate() -> Self {
+        Self {
+            user_id: Uuid::new_v4(),
+            username: Uuid::new_v4().to_string(),
+            password: Uuid::new_v4().to_string(),
+        }
+    }
+    pub async fn store(&self, pool: &PgPool) {
+        let salt = SaltString::generate(&mut thread_rng());
+        let hash_password = Argon2::new(
+            Algorithm::Argon2id,
+            Version::V0x13,
+            Params::new(15000, 2, 1, None).unwrap(),
+        )
+        .hash_password(self.password.as_bytes(), &salt)
+        .unwrap()
+        .to_string();
+
+        sqlx::query!(
+            "INSERT INTO users(user_id, username, password_hash) VALUES ($1,$2,$3)",
+            self.user_id,
+            self.username,
+            hash_password
+        )
+        .execute(pool)
+        .await
+        .expect("Failed to insert test user.");
     }
 }

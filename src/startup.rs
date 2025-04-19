@@ -62,7 +62,6 @@ pub async fn build(config: Settings) -> Serve<TcpListener, Router, Router> {
         //.await
         .expect("Failed to connect to postgres.");
 
-    dbg!(&config.email_client.base_url);
     let email_client =
         EmailClient::try_from(config.email_client).expect("Invalid email client settings.");
 

@@ -1,3 +1,4 @@
+use uuid::Uuid;
 use wiremock::{
     matchers::{any, method, path},
     Mock, ResponseTemplate,
@@ -83,5 +84,53 @@ async fn requests_missing_authorization_are_rejected() {
         .expect("Failed to send request.");
 
     assert_eq!(res.status().as_u16(), 401);
-    assert_eq!(res.headers()["WWW-Authenticate"], r#"Basic ream="publish""#)
+    assert_eq!(
+        res.headers()["WWW-Authenticate"],
+        r#"Basic realm="publish""#
+    )
+}
+
+#[tokio::test]
+async fn non_existing_users_are_rejected() {
+    let app = spawn_app().await;
+
+    let (username, password) = (Uuid::new_v4(), Uuid::new_v4());
+
+    let request_body = r#" {"title":"some title", "html_content":"<h1>Welcome to our newsletters that's the first episode.</h1>"} "#;
+    let res = reqwest::Client::new()
+        .post(format!("http://{}/newsletter", app.address))
+        .basic_auth(username, Some(password))
+        .header("Content-Type", "application/json")
+        .body(request_body)
+        .send()
+        .await
+        .expect("Failed to send request.");
+
+    assert_eq!(res.status().as_u16(), 401);
+    assert_eq!(
+        res.headers()["WWW-Authenticate"],
+        r#"Basic realm="publish""#
+    )
+}
+#[tokio::test]
+async fn invalid_password_is_rejected() {
+    let app = spawn_app().await;
+
+    let (username, password) = (app.test_user.username, Uuid::new_v4());
+
+    let request_body = r#" {"title":"some title", "html_content":"<h1>Welcome to our newsletters that's the first episode.</h1>"} "#;
+    let res = reqwest::Client::new()
+        .post(format!("http://{}/newsletter", app.address))
+        .basic_auth(username, Some(password))
+        .header("Content-Type", "application/json")
+        .body(request_body)
+        .send()
+        .await
+        .expect("Failed to send request.");
+
+    assert_eq!(res.status().as_u16(), 401);
+    assert_eq!(
+        res.headers()["WWW-Authenticate"],
+        r#"Basic realm="publish""#
+    )
 }

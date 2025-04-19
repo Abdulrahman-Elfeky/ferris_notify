@@ -1,3 +1,4 @@
+use tokio::task::{spawn_blocking, JoinHandle};
 use tower_http::trace::MakeSpan;
 use tracing::{dispatcher::set_global_default, info_span, Subscriber};
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
@@ -17,6 +18,7 @@ where
     let formatting_layer = BunyanFormattingLayer::new(name, sink);
     Registry::default()
         .with(env_filter)
+        //.with(tracing_subscriber::fmt::layer())
         .with(JsonStorageLayer)
         .with(formatting_layer)
 }
@@ -37,4 +39,13 @@ impl<B> MakeSpan<B> for RequestIdSpan {
             %request_id
         )
     }
+}
+
+pub fn spawn_blocking_with_tracing<F, R>(f: F) -> JoinHandle<R>
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
+{
+    let s = tracing::Span::current();
+    spawn_blocking(move || s.in_scope(f))
 }
