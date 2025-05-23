@@ -8,8 +8,9 @@ use ferris_notify::{
     telemetry::{get_subscriber, init_subscriber},
 };
 use rand2::thread_rng;
-use reqwest::Client;
+use reqwest::redirect::Policy;
 use secrecy::ExposeSecret;
+use serde::Serialize;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use uuid::Uuid;
 use wiremock::MockServer;
@@ -28,6 +29,7 @@ pub struct TestApp {
     pub pool: PgPool,
     pub email_server: MockServer,
     pub test_user: TestUser,
+    pub api_client: reqwest::Client,
 }
 
 pub async fn spawn_app() -> TestApp {
@@ -51,11 +53,18 @@ pub async fn spawn_app() -> TestApp {
     };
     tokio::spawn(fut());
 
+    let api_client = reqwest::Client::builder()
+        .redirect(Policy::none())
+        .cookie_store(true)
+        .build()
+        .unwrap();
+
     let test_app = TestApp {
         address,
         pool,
         email_server,
         test_user: TestUser::generate(),
+        api_client,
     };
 
     test_app.test_user.store(&test_app.pool).await;
@@ -86,8 +95,7 @@ pub async fn configure_database(config: &DatabaseSettings) -> PgPool {
 
 impl TestApp {
     pub async fn post_subscriptions(&self, body: &'static str) -> reqwest::Response {
-        let client = Client::new();
-        client
+        self.api_client
             .post(format!("http://{}/subscriptions", self.address))
             .body(body)
             .header("Content-Type", "application/x-www-form-urlencoded")
@@ -114,16 +122,85 @@ impl TestApp {
         link
     }
 
-    pub async fn publish_newsletter(&self, body: &'static str) -> reqwest::Response {
-        let client = Client::new();
-        client
-            .post(format!("http://{}/newsletter", self.address))
-            .basic_auth(&self.test_user.username, Some(&self.test_user.password))
-            .body(body)
-            .header("Content-Type", "application/json")
+    pub async fn publish_newsletter<Body: serde::Serialize>(
+        &self,
+        body: &Body,
+    ) -> reqwest::Response {
+        self.api_client
+            .post(format!("http://{}/admin/newsletters", self.address))
+            .form(body)
             .send()
             .await
             .expect("Failed to execute request.")
+    }
+
+    pub async fn get_publish_newsletter(&self) -> reqwest::Response {
+        self.api_client
+            .get(format!("http://{}/admin/newsletters", self.address))
+            .send()
+            .await
+            .expect("Failed to send request.")
+    }
+
+    pub async fn post_login<Body: serde::Serialize>(&self, body: &Body) -> reqwest::Response {
+        self.api_client
+            .post(format!("http://{}/login", self.address))
+            .form(body)
+            .send()
+            .await
+            .expect("Failed to send request.")
+    }
+
+    pub async fn get_login_html(&self) -> String {
+        self.api_client
+            .get(format!("http://{}/login", self.address))
+            .send()
+            .await
+            .expect("Failed to send request.")
+            .text()
+            .await
+            .unwrap()
+    }
+
+    pub async fn get_admin_dashboard(&self) -> reqwest::Response {
+        self.api_client
+            .get(format!("http://{}/admin/dashboard", self.address))
+            .send()
+            .await
+            .expect("Failed to send request.")
+    }
+
+    pub async fn get_admin_dashboard_html(&self) -> String {
+        self.get_admin_dashboard().await.text().await.unwrap()
+    }
+
+    pub async fn get_change_password(&self) -> reqwest::Response {
+        self.api_client
+            .get(format!("http://{}/admin/password", self.address))
+            .send()
+            .await
+            .expect("Failed to send request.")
+    }
+
+    pub async fn get_change_password_html(&self) -> String {
+        self.get_change_password().await.text().await.unwrap()
+    }
+
+    pub async fn post_change_password<Body: Serialize>(&self, body: &Body) -> reqwest::Response {
+        self.api_client
+            .post(format!("http://{}/admin/password", self.address))
+            .form(body)
+            .send()
+            .await
+            .expect("Failed to send request.")
+    }
+
+    pub async fn post_logout(&self) -> reqwest::Response {
+        self.api_client
+            .post(format!("http://{}/admin/logout", self.address))
+            .send()
+            .await
+            .expect("Failed to send request.")
     }
 }
 
@@ -163,4 +240,17 @@ impl TestUser {
         .await
         .expect("Failed to insert test user.");
     }
+
+    pub async fn login(&self, app: &TestApp) {
+        app.post_login(&serde_json::json!({
+            "username":self.username,
+            "password":self.password,
+        }))
+        .await;
+    }
+}
+
+pub fn assert_is_redirect(res: &reqwest::Response, path: &str) {
+    assert_eq!(res.status().as_u16(), 303);
+    assert_eq!(res.headers()["LOCATION"], path);
 }
