@@ -1,56 +1,32 @@
-use anyhow::Context;
 use axum::{
     extract::State,
-    http::{header::WWW_AUTHENTICATE, HeaderMap, HeaderValue, StatusCode},
-    response::IntoResponse,
+    response::{IntoResponse, Redirect, Response},
     Extension, Form,
 };
+use axum_extra::extract::{cookie::Cookie, CookieJar};
 use serde::Deserialize;
 use sqlx::PgPool;
-use tracing::{error, instrument, warn};
+use tracing::{instrument, warn};
 
 use crate::{
     authentication::UserId,
     domain::{SubscriberEmail, SubscriberName},
     email_client::EmailClient,
+    errors::ApiError,
+    idempotency::{save_response, try_processing, IdempotencyKey, NextAction},
     routes::admin::dashboard::get_username,
 };
 
 #[derive(Deserialize)]
-pub struct BodyData {
+pub struct FormData {
     title: String,
     html_content: String,
+    idempotency_key: String,
 }
 
 struct ConfirmedSubscriber {
     email: SubscriberEmail,
     name: SubscriberName,
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum PublishError {
-    #[error(transparent)]
-    UnexpectedError(#[from] anyhow::Error),
-    #[error("Authentication Faild {0}")]
-    AuthError(#[source] anyhow::Error),
-}
-
-impl IntoResponse for PublishError {
-    fn into_response(self) -> axum::response::Response {
-        match self {
-            Self::UnexpectedError(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, "something went wrong.").into_response()
-            }
-            Self::AuthError(_) => {
-                let mut headers = HeaderMap::new();
-                headers.insert(
-                    WWW_AUTHENTICATE,
-                    HeaderValue::from_static(r#"Basic realm="publish""#),
-                );
-                (StatusCode::UNAUTHORIZED, headers, "Authentication Failed").into_response()
-            }
-        }
-    }
 }
 
 #[instrument(
@@ -63,34 +39,52 @@ pub async fn publish_newsletter(
     Extension(user_id): Extension<UserId>,
     State(pool): State<PgPool>,
     State(email_client): State<EmailClient>,
-    Form(body): Form<BodyData>,
-) -> Result<impl IntoResponse, PublishError> {
+    Form(form): Form<FormData>,
+) -> Result<Response, ApiError> {
     tracing::Span::current().record("user_id", tracing::field::display(&user_id));
-    let username = get_username(&pool, *user_id)
-        .await
-        .map_err(|e| PublishError::UnexpectedError(e))?;
-
+    let username = get_username(&pool, *user_id).await?;
     tracing::Span::current().record("username", tracing::field::display(&username));
+    let FormData {
+        title,
+        html_content,
+        idempotency_key,
+    } = form;
+
+    let idempotency: IdempotencyKey = idempotency_key.try_into().map_err(ApiError::Validation)?;
+
+    let transaction = match try_processing(&pool, *user_id, &idempotency).await? {
+        NextAction::StartProcessing(t) => t,
+        NextAction::ReturnSavedResponse(res) => {
+            return Ok(res);
+        }
+    };
 
     let confirmed_subscribers = get_confirmed_subscribers(&pool).await?;
 
     for subscriber in confirmed_subscribers {
         match subscriber {
-            Ok(subscriber) => email_client
-                .send_email(
-                    &subscriber.email,
-                    &subscriber.name,
-                    &body.title,
-                    &body.html_content,
-                )
-                .await
-                .with_context(|| format!("Cann't send email to {}", subscriber.email))?,
+            Ok(subscriber) => {
+                email_client
+                    .send_email(&subscriber.email, &subscriber.name, &title, &html_content)
+                    .await?
+            }
             Err(_) => {
                 warn!("Skipping confirmed subscriber. Their stored contact details are invalid.",);
             }
         }
     }
-    Ok(StatusCode::OK)
+    let response = (
+        CookieJar::new().add(Cookie::new(
+            "_flash",
+            "The newsletter issue has been published!",
+        )),
+        Redirect::to("/admin/newsletters"),
+    )
+        .into_response();
+
+    let response = save_response(transaction, *user_id, &idempotency, response).await?;
+
+    Ok(response)
 }
 
 #[instrument(name = "Get confirmed subscribers", skip(pool), level = "debug")]

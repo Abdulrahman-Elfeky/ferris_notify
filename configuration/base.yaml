@@ -14,4 +14,4 @@ email_client:
   sender_email : "pody6163@gmail.com"
   sender_name : "Abdulrahman Sender"
   authorization_token : ""
-  timeout_milliseconds : 1000
+  timeout_milliseconds : 3000

@@ -1,7 +1,15 @@
 use axum::response::{Html, IntoResponse, Response};
+use axum_extra::extract::CookieJar;
+use uuid::Uuid;
 
-pub async fn publish_newsletter_form() -> Result<impl IntoResponse, Response> {
-    Ok(Html(
+pub async fn publish_newsletter_form(jar: CookieJar) -> Result<impl IntoResponse, Response> {
+    let idempotency_key = Uuid::new_v4();
+    let msg_html = match jar.get("_flash") {
+        Some(c) => c.value(),
+        None => "",
+    };
+
+    Ok(Html(format!(
         r#"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -9,7 +17,7 @@ pub async fn publish_newsletter_form() -> Result<impl IntoResponse, Response> {
     <title>Publish Newsletter Issue</title>
 </head>
 <body>
-    {msg_html}
+    <p><i>{msg_html}</i></p>
     <form action="/admin/newsletters" method="post">
         <label>Title:<br>
             <input
@@ -27,10 +35,11 @@ pub async fn publish_newsletter_form() -> Result<impl IntoResponse, Response> {
                 cols="50"
             ></textarea>
         </label>
+        <input hidden type="text" name="idempotency_key" value="{idempotency_key}">
         <button type="submit">Publish</button>
     </form>
     <p><a href="/admin/dashboard">&lt;- Back</a></p>
 </body>
 </html>"#,
-    ))
+    )))
 }

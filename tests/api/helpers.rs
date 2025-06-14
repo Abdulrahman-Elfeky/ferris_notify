@@ -142,6 +142,10 @@ impl TestApp {
             .expect("Failed to send request.")
     }
 
+    pub async fn get_publish_newsletter_html(&self) -> String {
+        self.get_publish_newsletter().await.text().await.unwrap()
+    }
+
     pub async fn post_login<Body: serde::Serialize>(&self, body: &Body) -> reqwest::Response {
         self.api_client
             .post(format!("http://{}/login", self.address))
