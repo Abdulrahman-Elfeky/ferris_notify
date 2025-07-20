@@ -55,6 +55,7 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
         "idempotency_key": Uuid::new_v4().to_string(),
     });
     let res = app.publish_newsletter(&body).await;
+    app.dispatch_all_pending_emails().await;
 
     assert_is_redirect(&res, "/admin/newsletters");
 
@@ -84,6 +85,7 @@ async fn newsletters_are_delivered_to_confirmed_subscribers() {
     });
 
     let res = app.publish_newsletter(&body).await;
+    app.dispatch_all_pending_emails().await;
 
     assert_is_redirect(&res, "/admin/newsletters");
 
@@ -102,6 +104,7 @@ async fn u_must_be_logged_in_to_publish_newsletter() {
     });
 
     let res = app.publish_newsletter(&body).await;
+    app.dispatch_all_pending_emails().await;
 
     assert_is_redirect(&res, "/login");
 }
@@ -138,6 +141,7 @@ async fn newsletter_creation_is_idempotent() {
         .await;
 
     let res = app.publish_newsletter(&body).await;
+    app.dispatch_all_pending_emails().await;
 
     assert_is_redirect(&res, "/admin/newsletters");
 
@@ -145,6 +149,7 @@ async fn newsletter_creation_is_idempotent() {
     assert!(html.contains("<p><i>The newsletter issue has been published!</i></p>"));
 
     let res = app.publish_newsletter(&body).await;
+    app.dispatch_all_pending_emails().await;
     assert_is_redirect(&res, "/admin/newsletters");
 
     let html = app.get_publish_newsletter_html().await;
@@ -177,6 +182,7 @@ async fn concurrent_form_submission_is_handled_gracefully() {
 
     let (res1, res2) = tokio::join!(res1, res2);
 
+    app.dispatch_all_pending_emails().await;
     assert_eq!(res1.status(), res2.status());
     assert_eq!(res1.text().await.unwrap(), res2.text().await.unwrap());
 }

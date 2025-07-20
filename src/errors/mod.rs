@@ -10,6 +10,8 @@ pub enum ApiError {
     Validation(String),
     #[error("Internal server error")]
     Internal(#[from] anyhow::Error),
+    #[error("Database error occurred")]
+    Database(#[from] sqlx::Error),
 }
 
 impl IntoResponse for ApiError {
@@ -34,6 +36,14 @@ impl IntoResponse for ApiError {
                     StatusCode::INTERNAL_SERVER_ERROR,
                     self.to_string(),
                     "INTERNAL_ERROR",
+                )
+            }
+            ApiError::Database(_) => {
+                tracing::error!("Database error: {:?}", self);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    self.to_string(),
+                    "DATABASE_ERROR",
                 )
             }
         };

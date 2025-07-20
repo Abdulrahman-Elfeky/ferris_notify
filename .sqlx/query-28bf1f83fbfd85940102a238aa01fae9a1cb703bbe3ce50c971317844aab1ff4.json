@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT response_status_code as \"response_status_code!\",\n        response_headers as \"response_headers!\",\n        response_body as \"response_body!\",\n        created_at\n        FROM idempotency \n        WHERE user_id = $1 and idempotency_key = $2 ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "response_status_code!",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 1,
+        "name": "response_headers!",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 2,
+        "name": "response_body!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "28bf1f83fbfd85940102a238aa01fae9a1cb703bbe3ce50c971317844aab1ff4"
+}

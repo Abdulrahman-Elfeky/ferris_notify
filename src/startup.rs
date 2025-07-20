@@ -8,11 +8,15 @@ use axum::{
     Router,
 };
 
-use secrecy::{ExposeSecret, SecretString};
-use sqlx::PgPool;
+use reqwest::Method;
+use secrecy::SecretString;
+use sqlx::{postgres::PgPoolOptions, PgPool};
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
-use tower_http::trace::{DefaultOnFailure, TraceLayer};
+use tower_http::{
+    cors::{Any, CorsLayer},
+    trace::{DefaultOnFailure, TraceLayer},
+};
 use tower_sessions::{
     cookie::{time::Duration, Key},
     Expiry, SessionManagerLayer,
@@ -24,7 +28,7 @@ use tower_sessions_redis_store::{
 
 use crate::{
     authentication::reject_anonymous_users,
-    configuration::Settings,
+    configuration::{DatabaseSettings, Settings},
     email_client::EmailClient,
     routes::{
         admin_dashboard, change_password, change_password_form, confirm, health_check, home,
@@ -67,7 +71,11 @@ pub fn run(
         .route("/password", post(change_password))
         .route("/logout", post(log_out))
         .layer(middleware::from_fn(reject_anonymous_users));
-
+    let cors = CorsLayer::new()
+        // allow `GET` and `POST` when accessing the resource
+        .allow_methods([Method::GET, Method::POST])
+        // allow requests from any origin
+        .allow_origin(Any);
     let router = Router::new()
         .route("/", get(home))
         .route("/login", get(login_form))
@@ -88,6 +96,7 @@ pub fn run(
                         .make_span_with(RequestIdSpan)
                         .on_failure(DefaultOnFailure::new()),
                 )
+                .layer(cors)
                 .layer(session_layer),
         );
     axum::serve(listener, router)
@@ -99,9 +108,7 @@ pub async fn build(config: Settings) -> Serve<TcpListener, Router, Router> {
         .await
         .expect("Failed to bind to address.");
 
-    let connection = PgPool::connect_lazy(&config.database.get_connection_string().expose_secret())
-        //.await
-        .expect("Failed to connect to postgres.");
+    let connection = get_connection_pool(&config.database);
 
     let email_client =
         EmailClient::try_from(config.email_client).expect("Invalid email client settings.");
@@ -113,4 +120,8 @@ pub async fn build(config: Settings) -> Serve<TcpListener, Router, Router> {
         config.application.base_url,
         config.application.hmac_secret,
     )
+}
+
+pub fn get_connection_pool(config: &DatabaseSettings) -> PgPool {
+    PgPoolOptions::new().connect_lazy_with(config.connect_options())
 }

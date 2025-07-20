@@ -3,7 +3,8 @@ use std::{env, io, net::SocketAddr, sync::LazyLock};
 use argon2::{password_hash::SaltString, Algorithm, Argon2, Params, Version};
 use ferris_notify::{
     configuration::{get_configurations, DatabaseSettings},
-    email_client::SendEmailRequest,
+    email_client::{EmailClient, SendEmailRequest},
+    issue_delivery_worker::ExecutionOutcome,
     startup::build,
     telemetry::{get_subscriber, init_subscriber},
 };
@@ -15,6 +16,7 @@ use sqlx::{Connection, Executor, PgConnection, PgPool};
 use uuid::Uuid;
 use wiremock::MockServer;
 
+use ferris_notify::issue_delivery_worker::try_execute_task;
 static TRACING: LazyLock<()> = LazyLock::new(|| {
     if env::var("TEST_LOG").is_ok() {
         let subscriber = get_subscriber("test".into(), "debug".into(), io::stdout);
@@ -30,6 +32,7 @@ pub struct TestApp {
     pub email_server: MockServer,
     pub test_user: TestUser,
     pub api_client: reqwest::Client,
+    pub email_client: EmailClient,
 }
 
 pub async fn spawn_app() -> TestApp {
@@ -45,7 +48,7 @@ pub async fn spawn_app() -> TestApp {
         c
     };
     let pool = configure_database(&config.database).await;
-    let serve = build(config).await;
+    let serve = build(config.clone()).await;
     let address = serve.local_addr().unwrap();
 
     let fut = async || {
@@ -59,12 +62,15 @@ pub async fn spawn_app() -> TestApp {
         .build()
         .unwrap();
 
+    let email_client = config.email_client.client();
+
     let test_app = TestApp {
         address,
         pool,
         email_server,
         test_user: TestUser::generate(),
         api_client,
+        email_client,
     };
 
     test_app.test_user.store(&test_app.pool).await;
@@ -205,6 +211,16 @@ impl TestApp {
             .send()
             .await
             .expect("Failed to send request.")
+    }
+
+    pub async fn dispatch_all_pending_emails(&self) {
+        loop {
+            if let Ok(ExecutionOutcome::EmptyQueue) =
+                try_execute_task(&self.pool, &self.email_client).await
+            {
+                break;
+            }
+        }
     }
 }
 

@@ -5,13 +5,12 @@ use axum::{
 };
 use axum_extra::extract::{cookie::Cookie, CookieJar};
 use serde::Deserialize;
-use sqlx::PgPool;
-use tracing::{instrument, warn};
+use sqlx::{PgPool, Postgres, Transaction};
+use tracing::instrument;
+use uuid::Uuid;
 
 use crate::{
     authentication::UserId,
-    domain::{SubscriberEmail, SubscriberName},
-    email_client::EmailClient,
     errors::ApiError,
     idempotency::{save_response, try_processing, IdempotencyKey, NextAction},
     routes::admin::dashboard::get_username,
@@ -24,11 +23,6 @@ pub struct FormData {
     idempotency_key: String,
 }
 
-struct ConfirmedSubscriber {
-    email: SubscriberEmail,
-    name: SubscriberName,
-}
-
 #[instrument(
     name = "Publish a newsletter issue",
     skip_all,
@@ -38,7 +32,6 @@ struct ConfirmedSubscriber {
 pub async fn publish_newsletter(
     Extension(user_id): Extension<UserId>,
     State(pool): State<PgPool>,
-    State(email_client): State<EmailClient>,
     Form(form): Form<FormData>,
 ) -> Result<Response, ApiError> {
     tracing::Span::current().record("user_id", tracing::field::display(&user_id));
@@ -52,27 +45,16 @@ pub async fn publish_newsletter(
 
     let idempotency: IdempotencyKey = idempotency_key.try_into().map_err(ApiError::Validation)?;
 
-    let transaction = match try_processing(&pool, *user_id, &idempotency).await? {
+    let mut transaction = match try_processing(&pool, *user_id, &idempotency).await? {
         NextAction::StartProcessing(t) => t,
         NextAction::ReturnSavedResponse(res) => {
             return Ok(res);
         }
     };
 
-    let confirmed_subscribers = get_confirmed_subscribers(&pool).await?;
+    let newsletter_id = insert_newsletter_issue(&mut transaction, title, html_content).await?;
+    enque_delivery_tasks(&mut transaction, newsletter_id).await?;
 
-    for subscriber in confirmed_subscribers {
-        match subscriber {
-            Ok(subscriber) => {
-                email_client
-                    .send_email(&subscriber.email, &subscriber.name, &title, &html_content)
-                    .await?
-            }
-            Err(_) => {
-                warn!("Skipping confirmed subscriber. Their stored contact details are invalid.",);
-            }
-        }
-    }
     let response = (
         CookieJar::new().add(Cookie::new(
             "_flash",
@@ -87,24 +69,50 @@ pub async fn publish_newsletter(
     Ok(response)
 }
 
-#[instrument(name = "Get confirmed subscribers", skip(pool), level = "debug")]
-async fn get_confirmed_subscribers(
-    pool: &PgPool,
-) -> Result<Vec<Result<ConfirmedSubscriber, anyhow::Error>>, anyhow::Error> {
-    let confirmed_subscribers =
-        sqlx::query!("SELECT email, name FROM subscriptions WHERE status = 'confirmed'")
-            .fetch_all(pool)
-            .await?
-            .into_iter()
-            .map(|r| {
-                match (
-                    SubscriberEmail::parse(r.email),
-                    SubscriberName::parse(r.name),
-                ) {
-                    (Ok(email), Ok(name)) => Ok(ConfirmedSubscriber { email, name }),
-                    (_, _) => Err(anyhow::anyhow!("invalid email or name")),
-                }
-            })
-            .collect();
-    Ok(confirmed_subscribers)
+#[instrument(skip_all)]
+async fn insert_newsletter_issue(
+    transaction: &mut Transaction<'static, Postgres>,
+    title: String,
+    html_content: String,
+) -> Result<Uuid, sqlx::Error> {
+    let newsletter_id = Uuid::new_v4();
+    sqlx::query!(
+        r#"
+    INSERT INTO newsletter_issues(
+    newsletter_id,
+    title,
+    html_content,
+    published_at
+    ) values
+    ($1, $2, $3, now())
+        "#,
+        newsletter_id,
+        title,
+        html_content
+    )
+    .execute(transaction.as_mut())
+    .await?;
+
+    Ok(newsletter_id)
+}
+
+#[instrument(skip_all)]
+async fn enque_delivery_tasks(
+    transaction: &mut Transaction<'static, Postgres>,
+    newsletter_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"
+    INSERT INTO issue_delivery_queue(
+        newsletter_id,
+        subscriber_email,
+        name
+    ) SELECT $1 , email, name FROM subscriptions WHERE status = 'confirmed'
+        "#,
+        newsletter_id
+    )
+    .execute(transaction.as_mut())
+    .await?;
+
+    Ok(())
 }

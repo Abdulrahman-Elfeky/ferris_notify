@@ -16,7 +16,7 @@ secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.217", features = ["derive"] }
 thiserror = "2.0.12"
 tokio = { version = "1.43.0", features = ["full"] }
-tower-http = { version = "0.6.2", features = ["trace"] }
+tower-http = { version = "0.6.2", features = ["trace", "cors"] }
 tower-sessions = { version = "0.14.0", features = ["signed"] }
 tower-sessions-redis-store = { version = "0.16.0", features = ["enable-rustls"] }
 tracing = "0.1.41"

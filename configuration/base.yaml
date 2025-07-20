@@ -1,6 +1,6 @@
 application :
   port : 8000
-  base_url : "http://127.0.0.1:8000"
+  base_url : "https://f2fdfe93f560.ngrok-free.app"
   hmac_secret : "my-secret-key"
   redis_uri: "redis://127.0.0.1:6379"
 database: 
@@ -9,9 +9,10 @@ database:
   username : "postgres"
   password : "p@ssw0rd"
   database_name : "newsletter"
+  require_ssl : false
 email_client:
   base_url : "https://api.brevo.com/v3/smtp"
   sender_email : "pody6163@gmail.com"
-  sender_name : "Abdulrahman Sender"
-  authorization_token : ""
-  timeout_milliseconds : 3000
+  sender_name : "Sender Name"
+  authorization_token : "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"
+  timeout_milliseconds : 30000
